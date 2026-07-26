@@ -11,7 +11,7 @@ namespace FcuControl.App;
 public partial class MainWindow : Window
 {
     private readonly AppController _controller;
-    private readonly OverlayWindow _overlay = new();
+    private readonly Action<OverlayMessage> _showOverlay;
     private readonly ObservableCollection<MappingRow> _mappingRows = [];
     private readonly ObservableCollection<MonitorRow> _monitorRows = [];
     private readonly ObservableCollection<OutputRow> _outputRows = [];
@@ -20,9 +20,10 @@ public partial class MainWindow : Window
     private bool _updatingOutputRows;
     private bool _updatingAudioSwitchRows;
 
-    public MainWindow(AppController controller)
+    public MainWindow(AppController controller, Action<OverlayMessage> showOverlay)
     {
         _controller = controller;
+        _showOverlay = showOverlay;
         Localization.SetLanguage(controller.Settings.Language);
         InitializeComponent();
         MappingGrid.ItemsSource = _mappingRows;
@@ -50,25 +51,22 @@ public partial class MainWindow : Window
         controller.StateChanged += ControllerOnStateChanged;
         controller.MappingsChanged += RefreshMappings;
         controller.MonitorsChanged += ControllerOnMonitorsChanged;
-        controller.AudioDevicesChanged += _ => Dispatcher.BeginInvoke(RefreshAudioSwitchRows);
-        controller.AudioSwitchBindingsChanged += () => Dispatcher.BeginInvoke(RefreshAudioSwitchRows);
-        controller.ApplicationLaunchBindingsChanged += () => Dispatcher.BeginInvoke(RefreshApplicationLaunchRows);
-        controller.HardwareBrightnessChanged += () => Dispatcher.BeginInvoke(RefreshHardwareBrightnessFields);
+        controller.AudioDevicesChanged += ControllerOnAudioDevicesChanged;
+        controller.AudioSwitchBindingsChanged += ControllerOnAudioSwitchBindingsChanged;
+        controller.ApplicationLaunchBindingsChanged += ControllerOnApplicationLaunchBindingsChanged;
+        controller.HardwareBrightnessChanged += ControllerOnHardwareBrightnessChanged;
         controller.DiagnosticReceived += AddDiagnostic;
-        controller.OverlayRequested += message => Dispatcher.BeginInvoke(() => _overlay.ShowMessage(message));
 
         StateChanged += (_, _) =>
         {
             if (WindowState == WindowState.Minimized)
             {
-                Hide();
+                Close();
             }
         };
-        Closing += MainWindow_Closing;
+        Closed += MainWindow_Closed;
         Loaded += (_, _) => RefreshAll();
     }
-
-    public bool AllowClose { get; set; }
 
     public void ShowAndActivate()
     {
@@ -134,6 +132,30 @@ public partial class MainWindow : Window
             RefreshMonitors(monitors);
             RefreshOutputRows();
         });
+    }
+
+    private void ControllerOnAudioDevicesChanged(IReadOnlyList<AudioDeviceSnapshot> _) =>
+        Dispatcher.BeginInvoke(RefreshAudioSwitchRows);
+
+    private void ControllerOnAudioSwitchBindingsChanged() =>
+        Dispatcher.BeginInvoke(RefreshAudioSwitchRows);
+
+    private void ControllerOnApplicationLaunchBindingsChanged() =>
+        Dispatcher.BeginInvoke(RefreshApplicationLaunchRows);
+
+    private void ControllerOnHardwareBrightnessChanged() =>
+        Dispatcher.BeginInvoke(RefreshHardwareBrightnessFields);
+
+    private void MainWindow_Closed(object? sender, EventArgs e)
+    {
+        _controller.StateChanged -= ControllerOnStateChanged;
+        _controller.MappingsChanged -= RefreshMappings;
+        _controller.MonitorsChanged -= ControllerOnMonitorsChanged;
+        _controller.AudioDevicesChanged -= ControllerOnAudioDevicesChanged;
+        _controller.AudioSwitchBindingsChanged -= ControllerOnAudioSwitchBindingsChanged;
+        _controller.ApplicationLaunchBindingsChanged -= ControllerOnApplicationLaunchBindingsChanged;
+        _controller.HardwareBrightnessChanged -= ControllerOnHardwareBrightnessChanged;
+        _controller.DiagnosticReceived -= AddDiagnostic;
     }
 
     private void RefreshMonitors(IReadOnlyList<MonitorSnapshot> monitors)
@@ -250,7 +272,7 @@ public partial class MainWindow : Window
         if ((sender as FrameworkElement)?.DataContext is MappingRow row)
         {
             _controller.BeginLearning(row.Action);
-            _overlay.ShowMessage(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
+            _showOverlay(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
                 Localization.Get("Overlay.UseAction", row.ActionName)));
         }
     }
@@ -271,7 +293,7 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.DataContext is not AudioSwitchRow row) return;
         _controller.BeginAudioSwitchLearning(row.BindingId);
-        _overlay.ShowMessage(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
+        _showOverlay(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
             Localization.Get("Overlay.PressAudioSwitch")));
     }
 
@@ -332,7 +354,7 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.DataContext is not ApplicationLaunchRow row) return;
         _controller.BeginApplicationLaunchLearning(row.BindingId);
-        _overlay.ShowMessage(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
+        _showOverlay(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
             Localization.Get("Overlay.PressApplicationLaunch")));
     }
 
@@ -421,13 +443,6 @@ public partial class MainWindow : Window
             return;
         }
         _controller.UpdateHardwareBrightness(backlight, lcd, led, step);
-    }
-
-    private void MainWindow_Closing(object? sender, CancelEventArgs e)
-    {
-        if (AllowClose) return;
-        e.Cancel = true;
-        Hide();
     }
 
     private sealed class MappingRow : NotifyBase

@@ -1,12 +1,13 @@
 using Drawing = System.Drawing;
 using Forms = System.Windows.Forms;
+using System.Windows.Threading;
 
 namespace FcuControl.App;
 
 public sealed class TrayIconService : IDisposable
 {
     private readonly AppController _controller;
-    private readonly MainWindow _window;
+    private readonly Dispatcher _dispatcher;
     private readonly Forms.NotifyIcon _icon;
     private readonly Drawing.Icon? _ownedIcon;
     private readonly Forms.ToolStripMenuItem _statusItem;
@@ -14,14 +15,14 @@ public sealed class TrayIconService : IDisposable
     private readonly Forms.ToolStripMenuItem _openItem;
     private readonly Forms.ToolStripMenuItem _exitItem;
 
-    public TrayIconService(AppController controller, MainWindow window, Action exit)
+    public TrayIconService(AppController controller, Dispatcher dispatcher, Action open, Action exit)
     {
         _controller = controller;
-        _window = window;
+        _dispatcher = dispatcher;
         _statusItem = new Forms.ToolStripMenuItem(Localization.Get("Status.Starting")) { Enabled = false };
         _pauseItem = new Forms.ToolStripMenuItem(Localization.Get("Button.Pause"), null, (_, _) => controller.ToggleManualPause());
-        _openItem = new Forms.ToolStripMenuItem(Localization.Get("Tray.Open"), null, (_, _) => window.Dispatcher.BeginInvoke(window.ShowAndActivate));
-        _exitItem = new Forms.ToolStripMenuItem(Localization.Get("Tray.Exit"), null, (_, _) => window.Dispatcher.BeginInvoke(exit));
+        _openItem = new Forms.ToolStripMenuItem(Localization.Get("Tray.Open"), null, (_, _) => dispatcher.BeginInvoke(open));
+        _exitItem = new Forms.ToolStripMenuItem(Localization.Get("Tray.Exit"), null, (_, _) => dispatcher.BeginInvoke(exit));
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add(_openItem);
         menu.Items.Add(_pauseItem);
@@ -37,7 +38,7 @@ public sealed class TrayIconService : IDisposable
             Visible = true,
             ContextMenuStrip = menu
         };
-        _icon.DoubleClick += (_, _) => window.Dispatcher.BeginInvoke(window.ShowAndActivate);
+        _icon.DoubleClick += (_, _) => dispatcher.BeginInvoke(open);
         controller.StateChanged += Update;
         Localization.LanguageChanged += Update;
         Update();
@@ -45,7 +46,7 @@ public sealed class TrayIconService : IDisposable
 
     private void Update()
     {
-        _window.Dispatcher.BeginInvoke(() =>
+        _dispatcher.BeginInvoke(() =>
         {
             _statusItem.Text = _controller.StatusText;
             _pauseItem.Text = Localization.Get(_controller.Settings.ManualPaused ? "Button.Resume" : "Button.Pause");
