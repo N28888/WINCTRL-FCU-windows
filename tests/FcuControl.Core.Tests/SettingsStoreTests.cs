@@ -19,6 +19,7 @@ public sealed class SettingsStoreTests
             var settings = store.Load();
 
             Assert.Equal(AppSettings.CurrentVersion, settings.SettingsVersion);
+            Assert.Equal("zh-CN", settings.Language);
             Assert.Equal(20, settings.VolumeStepPercent);
             Assert.Equal(1, settings.BrightnessStepPercent);
             Assert.Equal(["SimAppPro"], settings.ConflictProcesses);
@@ -29,6 +30,26 @@ public sealed class SettingsStoreTests
                 binding.Target == OutputTargetKind.VerticalSpeed && binding.Source == OutputSourceKind.FcuBacklightBrightness);
             Assert.Empty(settings.AudioDeviceSwitchBindings);
             Assert.Empty(settings.ApplicationLaunchBindings);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_PreservesSupportedLanguageAndRejectsUnknownLanguage()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var logger = new FileLogger(directory);
+            var store = new SettingsStore(logger, directory);
+            File.WriteAllText(store.SettingsPath, """{"Language":"en-US"}""");
+            Assert.Equal("en-US", store.Load().Language);
+
+            File.WriteAllText(store.SettingsPath, """{"Language":"unknown"}""");
+            Assert.Equal("zh-CN", store.Load().Language);
         }
         finally
         {

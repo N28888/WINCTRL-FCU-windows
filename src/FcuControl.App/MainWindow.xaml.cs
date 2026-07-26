@@ -22,18 +22,22 @@ public partial class MainWindow : Window
 
     public MainWindow(AppController controller)
     {
-        InitializeComponent();
         _controller = controller;
+        Localization.SetLanguage(controller.Settings.Language);
+        InitializeComponent();
         MappingGrid.ItemsSource = _mappingRows;
         MonitorGrid.ItemsSource = _monitorRows;
         OutputGrid.ItemsSource = _outputRows;
         AudioSwitchGrid.ItemsSource = _audioSwitchRows;
         ApplicationLaunchGrid.ItemsSource = _applicationLaunchRows;
 
-        foreach (var action in Enum.GetValues<AppAction>())
+        LanguageBox.ItemsSource = new[]
         {
-            _mappingRows.Add(new MappingRow(action, ActionNames.Get(action)));
-        }
+            new LanguageOption(Localization.Chinese, "中文"),
+            new LanguageOption(Localization.English, "English")
+        };
+        LanguageBox.SelectedValue = controller.Settings.Language;
+        RefreshLocalizedRows();
 
         ConflictProcessesBox.Text = string.Join(Environment.NewLine, controller.Settings.ConflictProcesses);
         VolumeStepBox.Text = controller.Settings.VolumeStepPercent.ToString();
@@ -83,6 +87,15 @@ public partial class MainWindow : Window
         RefreshApplicationLaunchRows();
     }
 
+    private void RefreshLocalizedRows()
+    {
+        _mappingRows.Clear();
+        foreach (var action in Enum.GetValues<AppAction>())
+        {
+            _mappingRows.Add(new MappingRow(action, ActionNames.Get(action)));
+        }
+    }
+
     private void ControllerOnStateChanged()
     {
         Dispatcher.BeginInvoke(RefreshState);
@@ -91,16 +104,16 @@ public partial class MainWindow : Window
     private void RefreshState()
     {
         StatusText.Text = _controller.StatusText;
-        DeviceStatusText.Text = _controller.HidConnected ? "已连接 WINCTRL 32 FCU" : _controller.StatusText;
+        DeviceStatusText.Text = _controller.HidConnected ? Localization.Get("State.ConnectedFcu") : _controller.StatusText;
         var audio = _controller.AudioSnapshot;
         AudioStatusText.Text = audio.Muted
-            ? $"{_controller.DefaultAudioDeviceName} · {audio.Volume}% · 已静音"
+            ? $"{_controller.DefaultAudioDeviceName} · {audio.Volume}% · {Localization.Get("State.Muted")}"
             : $"{_controller.DefaultAudioDeviceName} · {audio.Volume}%";
-        CurrentAudioDeviceText.Text = $"当前默认：{_controller.DefaultAudioDeviceName}";
+        CurrentAudioDeviceText.Text = Localization.Get("State.CurrentDefault", _controller.DefaultAudioDeviceName);
         ConflictStatusText.Text = _controller.ConflictMatches.Count > 0
             ? string.Join(", ", _controller.ConflictMatches)
-            : "未检测到冲突程序";
-        PauseButton.Content = _controller.Settings.ManualPaused ? "恢复" : "暂停";
+            : Localization.Get("State.NoConflict");
+        PauseButton.Content = Localization.Get(_controller.Settings.ManualPaused ? "Button.Resume" : "Button.Pause");
     }
 
     private void RefreshMappings()
@@ -109,7 +122,7 @@ public partial class MainWindow : Window
         {
             foreach (var row in _mappingRows)
             {
-                row.ControlId = _controller.GetBinding(row.Action) ?? "未绑定";
+                row.ControlId = _controller.GetBinding(row.Action) ?? Localization.Get("State.Unbound");
             }
         });
     }
@@ -130,13 +143,37 @@ public partial class MainWindow : Window
         {
             _monitorRows.Add(new MonitorRow(
                 monitor.Id,
-                monitor.Name,
-                monitor.Backend switch { MonitorBackend.Wmi => "WMI", MonitorBackend.DdcCi => "DDC/CI", _ => "不支持" },
+                LocalizeMonitorName(monitor.Name),
+                monitor.Backend switch { MonitorBackend.Wmi => "WMI", MonitorBackend.DdcCi => "DDC/CI", _ => Localization.Get("State.Unsupported") },
                 monitor.Brightness?.ToString() ?? "—",
-                monitor.Status,
+                LocalizeMonitorStatus(monitor.Status),
                 monitor.IsControllable,
                 _controller.IsMonitorEnabled(monitor.Id)));
         }
+    }
+
+    private static string LocalizeMonitorName(string name)
+    {
+        if (name == "内置显示器") return Localization.Get("Monitor.Internal");
+        if (name == "显示器") return Localization.Get("Monitor.Generic");
+        const string prefix = "外接显示器 ";
+        return name.StartsWith(prefix, StringComparison.Ordinal)
+            ? Localization.Get("Monitor.External", name[prefix.Length..])
+            : name;
+    }
+
+    private static string LocalizeMonitorStatus(string status)
+    {
+        return status switch
+        {
+            "等待写入" => Localization.Get("Monitor.Pending"),
+            "可控制" => Localization.Get("Monitor.Controllable"),
+            "写入失败" => Localization.Get("Monitor.WriteFailed"),
+            "DDC/CI 亮度不可用" => Localization.Get("Monitor.DdcUnavailable"),
+            _ when status.StartsWith("WMI 不可用：", StringComparison.Ordinal) =>
+                Localization.Get("Monitor.WmiUnavailable", status[8..]),
+            _ => status
+        };
     }
 
     private void RefreshOutputRows()
@@ -145,7 +182,7 @@ public partial class MainWindow : Window
         try
         {
             _outputRows.Clear();
-            var monitors = _controller.Monitors.Select(monitor => new MonitorOption(monitor.Id, monitor.Name)).ToArray();
+            var monitors = _controller.Monitors.Select(monitor => new MonitorOption(monitor.Id, LocalizeMonitorName(monitor.Name))).ToArray();
             foreach (var target in Enum.GetValues<OutputTargetKind>())
             {
                 var binding = _controller.Settings.OutputBindings.First(item => item.Target == target);
@@ -169,11 +206,11 @@ public partial class MainWindow : Window
             {
                 var options = devices.Select(device => new AudioDeviceOption(
                     device.Id,
-                    device.IsDefault ? $"{device.Name}（当前默认）" : device.Name)).ToList();
+                    device.IsDefault ? Localization.Get("State.CurrentDefaultSuffix", device.Name) : device.Name)).ToList();
                 if (!string.IsNullOrWhiteSpace(binding.DeviceId) &&
                     options.All(option => !string.Equals(option.Id, binding.DeviceId, StringComparison.OrdinalIgnoreCase)))
                 {
-                    options.Add(new AudioDeviceOption(binding.DeviceId, "已保存的设备（当前不可用）"));
+                    options.Add(new AudioDeviceOption(binding.DeviceId, Localization.Get("State.SavedDeviceUnavailable")));
                 }
 
                 _audioSwitchRows.Add(new AudioSwitchRow(binding, options));
@@ -213,7 +250,8 @@ public partial class MainWindow : Window
         if ((sender as FrameworkElement)?.DataContext is MappingRow row)
         {
             _controller.BeginLearning(row.Action);
-            _overlay.ShowMessage(new OverlayMessage("等待 FCU 输入", $"请操作：{row.ActionName}"));
+            _overlay.ShowMessage(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
+                Localization.Get("Overlay.UseAction", row.ActionName)));
         }
     }
 
@@ -233,7 +271,8 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.DataContext is not AudioSwitchRow row) return;
         _controller.BeginAudioSwitchLearning(row.BindingId);
-        _overlay.ShowMessage(new OverlayMessage("等待 FCU 输入", "请按下用于切换该音频设备的 FCU 按键"));
+        _overlay.ShowMessage(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
+            Localization.Get("Overlay.PressAudioSwitch")));
     }
 
     private void DeleteAudioSwitchButton_Click(object sender, RoutedEventArgs e)
@@ -272,8 +311,8 @@ public partial class MainWindow : Window
         if ((sender as FrameworkElement)?.DataContext is not ApplicationLaunchRow row) return;
         var dialog = new OpenFileDialog
         {
-            Title = "选择要由 FCU 启动的软件",
-            Filter = "应用程序或快捷方式 (*.exe;*.lnk)|*.exe;*.lnk",
+            Title = Localization.Get("Dialog.ChooseApplication"),
+            Filter = Localization.Get("Dialog.ApplicationFilter"),
             CheckFileExists = true,
             Multiselect = false
         };
@@ -293,7 +332,8 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.DataContext is not ApplicationLaunchRow row) return;
         _controller.BeginApplicationLaunchLearning(row.BindingId);
-        _overlay.ShowMessage(new OverlayMessage("等待 FCU 输入", "请按下用于启动该软件的 FCU 按键"));
+        _overlay.ShowMessage(new OverlayMessage(Localization.Get("Overlay.WaitingInput"),
+            Localization.Get("Overlay.PressApplicationLaunch")));
     }
 
     private void DeleteApplicationLaunchButton_Click(object sender, RoutedEventArgs e)
@@ -336,6 +376,14 @@ public partial class MainWindow : Window
 
     private void PauseButton_Click(object sender, RoutedEventArgs e) => _controller.ToggleManualPause();
 
+    private void LanguageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (LanguageBox.SelectedValue is not string language || language == _controller.Settings.Language) return;
+        _controller.UpdateLanguage(language);
+        RefreshLocalizedRows();
+        RefreshAll();
+    }
+
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
         await _controller.RefreshMonitorsAsync();
@@ -346,7 +394,8 @@ public partial class MainWindow : Window
     {
         if (!int.TryParse(VolumeStepBox.Text, out var volume) || !int.TryParse(BrightnessStepBox.Text, out var brightness))
         {
-            MessageBox.Show("请输入 1–20 的整数步长。", "步长设置", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Localization.Get("Validation.Step"), Localization.Get("Group.AdjustmentSteps"),
+                MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         _controller.UpdateSteps(volume, brightness);
@@ -367,7 +416,8 @@ public partial class MainWindow : Window
             !int.TryParse(LedBrightnessBox.Text, out var led) ||
             !int.TryParse(HardwareBrightnessStepBox.Text, out var step))
         {
-            MessageBox.Show("硬件亮度必须是 0–100 的整数，旋钮步长必须是 1–20 的整数。", "FCU 输出", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Localization.Get("Validation.HardwareBrightness"), Localization.Get("Tab.Output"),
+                MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         _controller.UpdateHardwareBrightness(backlight, lcd, led, step);
@@ -382,7 +432,7 @@ public partial class MainWindow : Window
 
     private sealed class MappingRow : NotifyBase
     {
-        private string _controlId = "未绑定";
+        private string _controlId = Localization.Get("State.Unbound");
         public MappingRow(AppAction action, string actionName) { Action = action; ActionName = actionName; }
         public AppAction Action { get; }
         public string ActionName { get; }
@@ -390,6 +440,7 @@ public partial class MainWindow : Window
     }
 
     private sealed record MonitorOption(string Id, string Name);
+    private sealed record LanguageOption(string Code, string Name);
     private sealed record SourceOption(OutputSourceKind Kind, string Label);
     private sealed record AudioDeviceOption(string Id, string Name);
     private sealed record LedOption(OutputTargetKind? Target, string Name);
@@ -399,10 +450,10 @@ public partial class MainWindow : Window
         public ApplicationLaunchRow(ApplicationLaunchBinding binding)
         {
             BindingId = binding.BindingId;
-            ControlId = string.IsNullOrWhiteSpace(binding.ControlId) ? "未绑定" : binding.ControlId;
+            ControlId = string.IsNullOrWhiteSpace(binding.ControlId) ? Localization.Get("State.Unbound") : binding.ControlId;
             ExecutablePath = binding.ExecutablePath;
             ApplicationName = string.IsNullOrWhiteSpace(binding.ExecutablePath)
-                ? "尚未选择软件"
+                ? Localization.Get("State.NoApplication")
                 : Path.GetFileNameWithoutExtension(binding.ExecutablePath);
         }
 
@@ -420,12 +471,12 @@ public partial class MainWindow : Window
         public AudioSwitchRow(AudioDeviceSwitchBinding binding, IEnumerable<AudioDeviceOption> devices)
         {
             BindingId = binding.BindingId;
-            ControlId = string.IsNullOrWhiteSpace(binding.ControlId) ? "未绑定" : binding.ControlId;
+            ControlId = string.IsNullOrWhiteSpace(binding.ControlId) ? Localization.Get("State.Unbound") : binding.ControlId;
             _selectedDeviceId = string.IsNullOrWhiteSpace(binding.DeviceId) ? null : binding.DeviceId;
             DeviceOptions = new ObservableCollection<AudioDeviceOption>(devices);
             LedOptions = new ObservableCollection<LedOption>(
             [
-                new(null, "不联动"),
+                new(null, Localization.Get("State.NoLinkedLed")),
                 new(OutputTargetKind.LocLed, "LOC LED"),
                 new(OutputTargetKind.Ap1Led, "AP1 LED"),
                 new(OutputTargetKind.Ap2Led, "AP2 LED"),
@@ -459,10 +510,10 @@ public partial class MainWindow : Window
             MonitorOptions = new ObservableCollection<MonitorOption>(monitors);
             var numeric = target is OutputTargetKind.Speed or OutputTargetKind.Heading or OutputTargetKind.Altitude or OutputTargetKind.VerticalSpeed;
             SourceOptions = new ObservableCollection<SourceOption>(numeric
-                ? [new(OutputSourceKind.Blank, "留空"), new(OutputSourceKind.MasterVolume, "系统音量"), new(OutputSourceKind.MonitorBrightness, "显示器亮度"),
-                   new(OutputSourceKind.FcuLcdBrightness, "FCU LCD 亮度"), new(OutputSourceKind.FcuBacklightBrightness, "FCU 按键背光")]
-                : [new(OutputSourceKind.ConstantOff, "关闭"), new(OutputSourceKind.ConstantOn, "常亮"), new(OutputSourceKind.Muted, "静音"),
-                   new(OutputSourceKind.AppActive, "程序活动"), new(OutputSourceKind.Yielded, "已让位"), new(OutputSourceKind.DeviceError, "设备故障")]);
+                ? [new(OutputSourceKind.Blank, Localization.Get("Source.Blank")), new(OutputSourceKind.MasterVolume, Localization.Get("Source.MasterVolume")), new(OutputSourceKind.MonitorBrightness, Localization.Get("Source.MonitorBrightness")),
+                   new(OutputSourceKind.FcuLcdBrightness, Localization.Get("Source.FcuLcdBrightness")), new(OutputSourceKind.FcuBacklightBrightness, Localization.Get("Source.FcuBacklightBrightness"))]
+                : [new(OutputSourceKind.ConstantOff, Localization.Get("Source.ConstantOff")), new(OutputSourceKind.ConstantOn, Localization.Get("Source.ConstantOn")), new(OutputSourceKind.Muted, Localization.Get("Source.Muted")),
+                   new(OutputSourceKind.AppActive, Localization.Get("Source.AppActive")), new(OutputSourceKind.Yielded, Localization.Get("Source.Yielded")), new(OutputSourceKind.DeviceError, Localization.Get("Source.DeviceError"))]);
             if (SourceOptions.All(option => option.Kind != source)) _selectedSource = SourceOptions[0].Kind;
         }
 
@@ -509,10 +560,10 @@ internal static class OutputNames
 {
     public static string Get(OutputTargetKind target) => target switch
     {
-        OutputTargetKind.Speed => "SPD 数码窗",
-        OutputTargetKind.Heading => "HDG 数码窗",
-        OutputTargetKind.Altitude => "ALT 数码窗",
-        OutputTargetKind.VerticalSpeed => "V/S 数码窗",
+        OutputTargetKind.Speed => Localization.Get("Output.Speed"),
+        OutputTargetKind.Heading => Localization.Get("Output.Heading"),
+        OutputTargetKind.Altitude => Localization.Get("Output.Altitude"),
+        OutputTargetKind.VerticalSpeed => Localization.Get("Output.VerticalSpeed"),
         OutputTargetKind.LocLed => "LOC LED",
         OutputTargetKind.Ap1Led => "AP1 LED",
         OutputTargetKind.Ap2Led => "AP2 LED",

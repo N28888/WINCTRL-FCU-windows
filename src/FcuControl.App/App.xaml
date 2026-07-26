@@ -3,6 +3,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Localization/Strings.zh-CN.xaml" />
+            </ResourceDictionary.MergedDictionaries>
         <SolidColorBrush x:Key="AccentBrush" Color="#2F6FED" />
         <Style TargetType="Button">
             <Setter Property="Padding" Value="12,6" />
@@ -12,6 +16,6 @@
             <Setter Property="Padding" Value="6,4" />
             <Setter Property="Margin" Value="3" />
         </Style>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>
-

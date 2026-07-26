@@ -11,30 +11,35 @@ public sealed class TrayIconService : IDisposable
     private readonly Drawing.Icon? _ownedIcon;
     private readonly Forms.ToolStripMenuItem _statusItem;
     private readonly Forms.ToolStripMenuItem _pauseItem;
+    private readonly Forms.ToolStripMenuItem _openItem;
+    private readonly Forms.ToolStripMenuItem _exitItem;
 
     public TrayIconService(AppController controller, MainWindow window, Action exit)
     {
         _controller = controller;
         _window = window;
-        _statusItem = new Forms.ToolStripMenuItem("正在启动") { Enabled = false };
-        _pauseItem = new Forms.ToolStripMenuItem("暂停", null, (_, _) => controller.ToggleManualPause());
+        _statusItem = new Forms.ToolStripMenuItem(Localization.Get("Status.Starting")) { Enabled = false };
+        _pauseItem = new Forms.ToolStripMenuItem(Localization.Get("Button.Pause"), null, (_, _) => controller.ToggleManualPause());
+        _openItem = new Forms.ToolStripMenuItem(Localization.Get("Tray.Open"), null, (_, _) => window.Dispatcher.BeginInvoke(window.ShowAndActivate));
+        _exitItem = new Forms.ToolStripMenuItem(Localization.Get("Tray.Exit"), null, (_, _) => window.Dispatcher.BeginInvoke(exit));
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add(new Forms.ToolStripMenuItem("打开主窗口", null, (_, _) => window.Dispatcher.BeginInvoke(window.ShowAndActivate)));
+        menu.Items.Add(_openItem);
         menu.Items.Add(_pauseItem);
         menu.Items.Add(_statusItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add(new Forms.ToolStripMenuItem("退出", null, (_, _) => window.Dispatcher.BeginInvoke(exit)));
+        menu.Items.Add(_exitItem);
 
         _ownedIcon = LoadApplicationIcon();
         _icon = new Forms.NotifyIcon
         {
             Icon = _ownedIcon ?? Drawing.SystemIcons.Application,
-            Text = "WINCTRL 32 FCU 控制器",
+            Text = Localization.Get("App.Title"),
             Visible = true,
             ContextMenuStrip = menu
         };
         _icon.DoubleClick += (_, _) => window.Dispatcher.BeginInvoke(window.ShowAndActivate);
         controller.StateChanged += Update;
+        Localization.LanguageChanged += Update;
         Update();
     }
 
@@ -43,7 +48,9 @@ public sealed class TrayIconService : IDisposable
         _window.Dispatcher.BeginInvoke(() =>
         {
             _statusItem.Text = _controller.StatusText;
-            _pauseItem.Text = _controller.Settings.ManualPaused ? "恢复" : "暂停";
+            _pauseItem.Text = Localization.Get(_controller.Settings.ManualPaused ? "Button.Resume" : "Button.Pause");
+            _openItem.Text = Localization.Get("Tray.Open");
+            _exitItem.Text = Localization.Get("Tray.Exit");
             _icon.Text = _controller.StatusText.Length > 63 ? _controller.StatusText[..63] : _controller.StatusText;
         });
     }
@@ -51,6 +58,7 @@ public sealed class TrayIconService : IDisposable
     public void Dispose()
     {
         _controller.StateChanged -= Update;
+        Localization.LanguageChanged -= Update;
         _icon.Visible = false;
         _icon.Dispose();
         _ownedIcon?.Dispose();

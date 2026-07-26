@@ -56,7 +56,7 @@ public sealed class AudioService : IMMNotificationClient, IDisposable
             lock (_gate)
             {
                 EnsureDeviceLocked();
-                return _device is null ? "无可用输出设备" : SafeName(_device);
+                return _device is null ? Localization.Get("Audio.NoOutputDevice") : SafeName(_device);
             }
         }
     }
@@ -81,7 +81,7 @@ public sealed class AudioService : IMMNotificationClient, IDisposable
             EnsureDeviceLocked();
             if (_device is null)
             {
-                throw new InvalidOperationException("没有可用的默认音频输出设备。");
+                throw new InvalidOperationException(Localization.Get("Audio.NoDefaultOutput"));
             }
 
             var current = (int)Math.Round(_device.AudioEndpointVolume.MasterVolumeLevelScalar * 100);
@@ -102,7 +102,7 @@ public sealed class AudioService : IMMNotificationClient, IDisposable
             EnsureDeviceLocked();
             if (_device is null)
             {
-                throw new InvalidOperationException("没有可用的默认音频输出设备。");
+                throw new InvalidOperationException(Localization.Get("Audio.NoDefaultOutput"));
             }
 
             _device.AudioEndpointVolume.Mute = !_device.AudioEndpointVolume.Mute;
@@ -117,7 +117,7 @@ public sealed class AudioService : IMMNotificationClient, IDisposable
     {
         if (string.IsNullOrWhiteSpace(deviceId))
         {
-            throw new InvalidOperationException("请先选择目标音频输出设备。");
+            throw new InvalidOperationException(Localization.Get("Audio.SelectTarget"));
         }
 
         AudioDeviceSnapshot target;
@@ -125,7 +125,7 @@ public sealed class AudioService : IMMNotificationClient, IDisposable
         {
             target = _devices.FirstOrDefault(device =>
                          string.Equals(device.Id, deviceId, StringComparison.OrdinalIgnoreCase))
-                     ?? throw new InvalidOperationException("目标音频设备当前不可用，请刷新设备列表。");
+                     ?? throw new InvalidOperationException(Localization.Get("Audio.TargetUnavailable"));
         }
 
         AudioEndpointPolicy.SetDefaultEndpoint(target.Id);
@@ -133,7 +133,7 @@ public sealed class AudioService : IMMNotificationClient, IDisposable
 
         if (!string.Equals(DefaultDeviceId, target.Id, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"Windows 未能切换到“{target.Name}”。");
+            throw new InvalidOperationException(Localization.Get("Audio.SwitchFailed", target.Name));
         }
 
         return target with { IsDefault = true };

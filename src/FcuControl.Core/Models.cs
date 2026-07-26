@@ -115,6 +115,7 @@ public sealed class AppSettings
     public const int CurrentVersion = 4;
 
     public int SettingsVersion { get; set; } = CurrentVersion;
+    public string Language { get; set; } = "zh-CN";
     public int VolumeStepPercent { get; set; } = 2;
     public int BrightnessStepPercent { get; set; } = 5;
     public int HardwareBrightnessStepPercent { get; set; } = 5;

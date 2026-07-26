@@ -17,7 +17,7 @@ public partial class App : System.Windows.Application
         _singleInstanceMutex = new Mutex(true, "Local\\FcuControl-WinCtrl32-BB10", out var createdNew);
         if (!createdNew)
         {
-            MessageBox.Show("FCU 控制器已经在运行。请检查系统托盘。", "FCU 控制器",
+            MessageBox.Show(Localization.Get("App.AlreadyRunning"), Localization.Get("App.ShortTitle"),
                 MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
@@ -26,7 +26,7 @@ public partial class App : System.Windows.Application
         DispatcherUnhandledException += (_, args) =>
         {
             _controller?.Logger.Error("UI 未处理异常", args.Exception);
-            MessageBox.Show($"程序遇到错误：{args.Exception.Message}", "FCU 控制器",
+            MessageBox.Show(Localization.Get("App.UnhandledError", args.Exception.Message), Localization.Get("App.ShortTitle"),
                 MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };

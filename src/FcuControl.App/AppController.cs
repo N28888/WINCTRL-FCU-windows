@@ -42,6 +42,8 @@ public sealed class AppController : IAsyncDisposable
         Logger = new FileLogger(baseDirectory);
         _settingsStore = new SettingsStore(Logger);
         Settings = _settingsStore.Load();
+        Localization.SetLanguage(Settings.Language);
+        StatusText = Localization.Get("Status.Starting");
         _bindings = new BindingRegistry(Settings.InputBindings);
         _audioSwitchBindings = new AudioSwitchBindingRegistry(Settings.AudioDeviceSwitchBindings);
         _applicationLaunchBindings = new ApplicationLaunchBindingRegistry(Settings.ApplicationLaunchBindings);
@@ -71,7 +73,7 @@ public sealed class AppController : IAsyncDisposable
     public FileLogger Logger { get; }
     public AppSettings Settings { get; }
     public RuntimeMode Mode { get; private set; } = RuntimeMode.WaitingForDevice;
-    public string StatusText { get; private set; } = "正在启动";
+    public string StatusText { get; private set; } = string.Empty;
     public IReadOnlyList<string> ConflictMatches => _conflictMatches;
     public bool HidConnected => _hid.IsConnected;
     public IReadOnlyList<MonitorSnapshot> Monitors => _brightness.Snapshots;
@@ -115,7 +117,7 @@ public sealed class AppController : IAsyncDisposable
         _learningAudioSwitchBindingId = null;
         _learningApplicationLaunchBindingId = null;
         _learningAction = action;
-        StatusText = $"学习中：请操作要绑定到“{ActionNames.Get(action)}”的 FCU 控件";
+        StatusText = Localization.Get("Learning.Action", ActionNames.Get(action));
         StateChanged?.Invoke();
     }
 
@@ -174,13 +176,13 @@ public sealed class AppController : IAsyncDisposable
 
     public void BeginAudioSwitchLearning(string bindingId)
     {
-        var binding = _audioSwitchBindings.Find(bindingId) ?? throw new InvalidOperationException("找不到音频切换绑定。");
+        var binding = _audioSwitchBindings.Find(bindingId) ?? throw new InvalidOperationException(Localization.Get("Error.AudioBindingNotFound"));
         _learningAction = null;
         _learningApplicationLaunchBindingId = null;
         _learningAudioSwitchBindingId = binding.BindingId;
         var device = _audio.Devices.FirstOrDefault(item =>
             string.Equals(item.Id, binding.DeviceId, StringComparison.OrdinalIgnoreCase));
-        StatusText = $"学习中：请操作要切换到“{device?.Name ?? "所选音频设备"}”的 FCU 控件";
+        StatusText = Localization.Get("Learning.AudioSwitch", device?.Name ?? Localization.Get("State.SelectedAudioDevice"));
         StateChanged?.Invoke();
     }
 
@@ -214,14 +216,14 @@ public sealed class AppController : IAsyncDisposable
 
     public void BeginApplicationLaunchLearning(string bindingId)
     {
-        var binding = _applicationLaunchBindings.Find(bindingId) ?? throw new InvalidOperationException("找不到软件启动绑定。");
+        var binding = _applicationLaunchBindings.Find(bindingId) ?? throw new InvalidOperationException(Localization.Get("Error.ApplicationBindingNotFound"));
         _learningAction = null;
         _learningAudioSwitchBindingId = null;
         _learningApplicationLaunchBindingId = binding.BindingId;
         var name = string.IsNullOrWhiteSpace(binding.ExecutablePath)
-            ? "所选软件"
+            ? Localization.Get("State.SelectedApplication")
             : Path.GetFileNameWithoutExtension(binding.ExecutablePath);
-        StatusText = $"学习中：请操作要启动“{name}”的 FCU 控件";
+        StatusText = Localization.Get("Learning.ApplicationLaunch", name);
         StateChanged?.Invoke();
     }
 
@@ -234,6 +236,15 @@ public sealed class AppController : IAsyncDisposable
     }
 
     public void ToggleManualPause() => SetManualPaused(!Settings.ManualPaused);
+
+    public void UpdateLanguage(string language)
+    {
+        Settings.Language = language == Localization.English ? Localization.English : Localization.Chinese;
+        Localization.SetLanguage(Settings.Language);
+        SaveSettings();
+        StatusText = BuildLearningStatus() ?? BuildStatusText();
+        StateChanged?.Invoke();
+    }
 
     public async Task RefreshMonitorsAsync()
     {
@@ -383,7 +394,8 @@ public sealed class AppController : IAsyncDisposable
                 MappingsChanged?.Invoke();
                 if (clearedAudioBindings) AudioSwitchBindingsChanged?.Invoke();
                 if (clearedApplicationBindings) ApplicationLaunchBindingsChanged?.Invoke();
-                OverlayRequested?.Invoke(new OverlayMessage("绑定完成", $"{ActionNames.Get(action)} ← {activation.ControlId}"));
+                OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.BindingComplete"),
+                    $"{ActionNames.Get(action)} ← {activation.ControlId}"));
                 return;
             }
 
@@ -406,7 +418,8 @@ public sealed class AppController : IAsyncDisposable
                 if (removedInputBinding) MappingsChanged?.Invoke();
                 if (clearedApplicationBindings) ApplicationLaunchBindingsChanged?.Invoke();
                 AudioSwitchBindingsChanged?.Invoke();
-                OverlayRequested?.Invoke(new OverlayMessage("绑定完成", $"音频设备切换 ← {activation.ControlId}"));
+                OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.BindingComplete"),
+                    Localization.Get("Overlay.AudioSwitchBound", activation.ControlId)));
                 return;
             }
 
@@ -429,7 +442,8 @@ public sealed class AppController : IAsyncDisposable
                 if (removedInputBinding) MappingsChanged?.Invoke();
                 if (clearedAudioBindings) AudioSwitchBindingsChanged?.Invoke();
                 ApplicationLaunchBindingsChanged?.Invoke();
-                OverlayRequested?.Invoke(new OverlayMessage("绑定完成", $"启动软件 ← {activation.ControlId}"));
+                OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.BindingComplete"),
+                    Localization.Get("Overlay.ApplicationLaunchBound", activation.ControlId)));
                 return;
             }
 
@@ -460,12 +474,12 @@ public sealed class AppController : IAsyncDisposable
         {
             var name = _applicationLauncher.Launch(binding.ExecutablePath);
             Logger.Info($"已通过 FCU 启动软件：{binding.ExecutablePath}");
-            OverlayRequested?.Invoke(new OverlayMessage("已启动软件", name));
+            OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.ApplicationLaunched"), name));
         }
         catch (Exception exception)
         {
             Logger.Error("启动软件失败", exception);
-            OverlayRequested?.Invoke(new OverlayMessage("启动软件失败", exception.Message));
+            OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.ApplicationLaunchFailed"), exception.Message));
         }
     }
 
@@ -476,13 +490,13 @@ public sealed class AppController : IAsyncDisposable
             var target = _audio.SetDefaultOutputDevice(binding.DeviceId);
             Logger.Info($"默认音频输出已切换：{target.Name}");
             var audio = _audio.Snapshot;
-            OverlayRequested?.Invoke(new OverlayMessage("音频输出已切换", $"{target.Name} · {audio.Volume}%", audio.Volume, audio.Muted));
+            OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.AudioSwitched"), $"{target.Name} · {audio.Volume}%", audio.Volume, audio.Muted));
             await UpdateHardwareOutputAsync();
         }
         catch (Exception exception)
         {
             Logger.Error("切换默认音频输出失败", exception);
-            OverlayRequested?.Invoke(new OverlayMessage("音频切换失败", exception.Message));
+            OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.AudioSwitchFailed"), exception.Message));
         }
     }
 
@@ -495,19 +509,19 @@ public sealed class AppController : IAsyncDisposable
                 case AppAction.VolumeUp:
                 {
                     var result = _audio.Adjust(Settings.VolumeStepPercent);
-                    OverlayRequested?.Invoke(new OverlayMessage("系统音量", result.Muted ? "已静音" : $"{result.Volume}%", result.Volume, result.Muted));
+                    OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.SystemVolume"), result.Muted ? Localization.Get("State.Muted") : $"{result.Volume}%", result.Volume, result.Muted));
                     break;
                 }
                 case AppAction.VolumeDown:
                 {
                     var result = _audio.Adjust(-Settings.VolumeStepPercent);
-                    OverlayRequested?.Invoke(new OverlayMessage("系统音量", result.Muted ? "已静音" : $"{result.Volume}%", result.Volume, result.Muted));
+                    OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.SystemVolume"), result.Muted ? Localization.Get("State.Muted") : $"{result.Volume}%", result.Volume, result.Muted));
                     break;
                 }
                 case AppAction.ToggleMute:
                 {
                     var result = _audio.ToggleMute();
-                    OverlayRequested?.Invoke(new OverlayMessage("系统音量", result.Muted ? "已静音" : $"{result.Volume}%", result.Volume, result.Muted));
+                    OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.SystemVolume"), result.Muted ? Localization.Get("State.Muted") : $"{result.Volume}%", result.Volume, result.Muted));
                     break;
                 }
                 case AppAction.BrightnessUp:
@@ -537,7 +551,7 @@ public sealed class AppController : IAsyncDisposable
         catch (Exception exception)
         {
             Logger.Error($"执行动作 {action} 失败", exception);
-            OverlayRequested?.Invoke(new OverlayMessage("操作失败", exception.Message));
+            OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.ActionFailed"), exception.Message));
         }
     }
 
@@ -548,9 +562,9 @@ public sealed class AppController : IAsyncDisposable
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var changes = _brightness.AdjustSelected(enabled, delta);
         var detail = changes.Count == 0
-            ? "没有已勾选且可控制的显示器"
+            ? Localization.Get("Overlay.NoControllableMonitor")
             : string.Join("  ·  ", changes.Select(change => $"{change.MonitorName} {change.Target}%"));
-        OverlayRequested?.Invoke(new OverlayMessage("显示器亮度", detail,
+        OverlayRequested?.Invoke(new OverlayMessage(Localization.Get("Overlay.MonitorBrightness"), detail,
             changes.Count == 1 ? changes[0].Target : null));
     }
 
@@ -564,7 +578,7 @@ public sealed class AppController : IAsyncDisposable
         _output.ResetCache();
         HardwareBrightnessChanged?.Invoke();
         OverlayRequested?.Invoke(new OverlayMessage(
-            adjustLcd ? "FCU LCD 亮度" : "FCU 按键背光",
+            Localization.Get(adjustLcd ? "Source.FcuLcdBrightness" : "Source.FcuBacklightBrightness"),
             $"{target}%",
             target));
     }
@@ -594,7 +608,9 @@ public sealed class AppController : IAsyncDisposable
         }
         _dispatcher.BeginInvoke(() =>
         {
-            StatusText = message;
+            StatusText = connected
+                ? Localization.Get("State.Connected", _hid.DeviceName)
+                : Localization.Get(_deviceError ? "State.DeviceError" : "State.Waiting");
             StateChanged?.Invoke();
         });
     }
@@ -673,13 +689,39 @@ public sealed class AppController : IAsyncDisposable
     {
         return Mode switch
         {
-            RuntimeMode.Active => $"已连接：{_hid.DeviceName}",
-            RuntimeMode.WaitingForDevice => "等待 WINCTRL 32 FCU",
-            RuntimeMode.Yielded => _conflictMatches.Count > 0 ? $"已让位：{string.Join(", ", _conflictMatches)}" : "正在等待飞行软件释放",
-            RuntimeMode.ManualPaused => "已手动暂停",
-            RuntimeMode.DeviceError => "设备通信错误，正在重试",
-            _ => "未知状态"
+            RuntimeMode.Active => Localization.Get("State.Connected", _hid.DeviceName),
+            RuntimeMode.WaitingForDevice => Localization.Get("State.Waiting"),
+            RuntimeMode.Yielded => _conflictMatches.Count > 0
+                ? Localization.Get("State.Yielded", string.Join(", ", _conflictMatches))
+                : Localization.Get("State.WaitingRelease"),
+            RuntimeMode.ManualPaused => Localization.Get("State.Paused"),
+            RuntimeMode.DeviceError => Localization.Get("State.DeviceError"),
+            _ => Localization.Get("State.Unknown")
         };
+    }
+
+    private string? BuildLearningStatus()
+    {
+        if (_learningAction.HasValue)
+        {
+            return Localization.Get("Learning.Action", ActionNames.Get(_learningAction.Value));
+        }
+        if (_learningAudioSwitchBindingId is not null)
+        {
+            var binding = _audioSwitchBindings.Find(_learningAudioSwitchBindingId);
+            var device = binding is null ? null : _audio.Devices.FirstOrDefault(item =>
+                string.Equals(item.Id, binding.DeviceId, StringComparison.OrdinalIgnoreCase));
+            return Localization.Get("Learning.AudioSwitch", device?.Name ?? Localization.Get("State.SelectedAudioDevice"));
+        }
+        if (_learningApplicationLaunchBindingId is not null)
+        {
+            var binding = _applicationLaunchBindings.Find(_learningApplicationLaunchBindingId);
+            var name = string.IsNullOrWhiteSpace(binding?.ExecutablePath)
+                ? Localization.Get("State.SelectedApplication")
+                : Path.GetFileNameWithoutExtension(binding.ExecutablePath);
+            return Localization.Get("Learning.ApplicationLaunch", name);
+        }
+        return null;
     }
 
     private Task PublishStateAsync()
@@ -716,16 +758,16 @@ public static class ActionNames
 {
     public static string Get(AppAction action) => action switch
     {
-        AppAction.VolumeUp => "音量增加",
-        AppAction.VolumeDown => "音量减少",
-        AppAction.ToggleMute => "静音切换",
-        AppAction.BrightnessUp => "亮度增加",
-        AppAction.BrightnessDown => "亮度减少",
-        AppAction.FcuLcdBrightnessUp => "FCU LCD 亮度增加",
-        AppAction.FcuLcdBrightnessDown => "FCU LCD 亮度减少",
-        AppAction.FcuBacklightBrightnessUp => "FCU 背光增加",
-        AppAction.FcuBacklightBrightnessDown => "FCU 背光减少",
-        AppAction.ToggleManualPause => "手动暂停",
+        AppAction.VolumeUp => Localization.Get("Action.VolumeUp"),
+        AppAction.VolumeDown => Localization.Get("Action.VolumeDown"),
+        AppAction.ToggleMute => Localization.Get("Action.ToggleMute"),
+        AppAction.BrightnessUp => Localization.Get("Action.BrightnessUp"),
+        AppAction.BrightnessDown => Localization.Get("Action.BrightnessDown"),
+        AppAction.FcuLcdBrightnessUp => Localization.Get("Action.FcuLcdBrightnessUp"),
+        AppAction.FcuLcdBrightnessDown => Localization.Get("Action.FcuLcdBrightnessDown"),
+        AppAction.FcuBacklightBrightnessUp => Localization.Get("Action.FcuBacklightBrightnessUp"),
+        AppAction.FcuBacklightBrightnessDown => Localization.Get("Action.FcuBacklightBrightnessDown"),
+        AppAction.ToggleManualPause => Localization.Get("Action.ToggleManualPause"),
         _ => action.ToString()
     };
 }

@@ -70,6 +70,7 @@ public sealed class SettingsStore
     {
         var previousVersion = settings.SettingsVersion;
         settings.SettingsVersion = AppSettings.CurrentVersion;
+        settings.Language = settings.Language == "en-US" ? "en-US" : "zh-CN";
         settings.VolumeStepPercent = Math.Clamp(settings.VolumeStepPercent, 1, 20);
         settings.BrightnessStepPercent = Math.Clamp(settings.BrightnessStepPercent, 1, 20);
         settings.HardwareBrightnessStepPercent = Math.Clamp(settings.HardwareBrightnessStepPercent, 1, 20);
