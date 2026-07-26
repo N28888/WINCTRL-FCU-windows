@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/FcuControl.Core/FcuControl.Core.csproj" />
+  <Project Path="src/FcuControl.App/FcuControl.App.csproj" />
+  <Project Path="tests/FcuControl.Core.Tests/FcuControl.Core.Tests.csproj" />
+</Solution>
+
