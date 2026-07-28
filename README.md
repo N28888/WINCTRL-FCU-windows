@@ -1,6 +1,6 @@
 # WINCTRL 32 FCU 控制器
 
-把 `WINCTRL 32 FCU`（USB VID `4098`、PID `BB10`）用作 Windows 11 的音量和显示器亮度控制器。
+把 `WINCTRL 32 FCU` 用作 Windows 11 的音量和显示器亮度控制器。
 
 ## 功能
 
